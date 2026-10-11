@@ -1,0 +1,52 @@
+//@version=6
+// EMA crossover + RSI filter + ATR stop/target, long only.
+// Sends JSON webhook alerts to the bot. Backtest in TradingView's Strategy Tester
+// BEFORE connecting it to any account. Past results do not predict future results.
+strategy("Webhook Bot - EMA/RSI/ATR", overlay = true,
+     initial_capital = 10000, default_qty_type = strategy.percent_of_equity, default_qty_value = 10,
+     commission_type = strategy.commission.percent, commission_value = 0.05, slippage = 2,
+     process_orders_on_close = true)
+
+// ---- Inputs ----
+secret     = input.string("PASTE_YOUR_WEBHOOK_SECRET", "Webhook secret (must match WEBHOOK_SECRET)")
+fastLen    = input.int(20, "Fast EMA", minval = 1)
+slowLen    = input.int(50, "Slow EMA", minval = 2)
+rsiLen     = input.int(14, "RSI length", minval = 2)
+rsiMax     = input.float(70, "Don't buy when RSI above", minval = 1, maxval = 100)
+atrLen     = input.int(14, "ATR length", minval = 1)
+stopMult   = input.float(2.0, "Stop = ATR x", minval = 0.1, step = 0.1)
+targetMult = input.float(3.0, "Target = ATR x", minval = 0.1, step = 0.1)
+
+// ---- Indicators ----
+fast = ta.ema(close, fastLen)
+slow = ta.ema(close, slowLen)
+rsi  = ta.rsi(close, rsiLen)
+atr  = ta.atr(atrLen)
+plot(fast, "Fast EMA", color.teal)
+plot(slow, "Slow EMA", color.orange)
+
+// ---- Signals (evaluated on bar close, so no repainting) ----
+longEntry = ta.crossover(fast, slow) and rsi < rsiMax and barstate.isconfirmed
+longExit  = ta.crossunder(fast, slow) and barstate.isconfirmed
+
+msg(action) =>
+    '{"secret":"' + secret + '","symbol":"' + syminfo.ticker + '","action":"' + action +
+     '","price":' + str.tostring(close) + ',"signal_id":"' + syminfo.ticker + '-' + action + '-' +
+     str.tostring(time) + '"}'
+
+var float stopPx = na
+var float targetPx = na
+
+if longEntry and strategy.position_size == 0
+    stopPx   := close - atr * stopMult
+    targetPx := close + atr * targetMult
+    strategy.entry("Long", strategy.long, alert_message = msg("buy"))
+
+if strategy.position_size > 0
+    strategy.exit("Stop/Target", "Long", stop = stopPx, limit = targetPx, alert_message = msg("close"))
+
+if longExit and strategy.position_size > 0
+    strategy.close("Long", comment = "EMA cross down", alert_message = msg("close"))
+
+plot(strategy.position_size > 0 ? stopPx : na, "Stop", color.red, style = plot.style_linebr)
+plot(strategy.position_size > 0 ? targetPx : na, "Target", color.green, style = plot.style_linebr)
