@@ -11,9 +11,11 @@ TradingView alert ──(webhook JSON)──▶ this bot ──▶ risk checks �
 
 | Path | What it does |
 |---|---|
-| `pine/sma_cross_strategy.pine` | **The video's strategy:** buy on a close above the 50 SMA, sell on a close below. Optional MACD 3/10/16, higher-timeframe filter, and stop-loss with risk-% sizing |
+| `pine/rsi2_dip_strategy.pine` | **Recommended.** RSI(2) dip-buy: in an uptrend (above the 200 SMA), buy sharp 1–2 day dips and sell on the bounce. Fewest losing trades in testing |
+| `research/compare_strategies.py` | Tests all the strategies below on real price history and prints the results |
+| `pine/sma_cross_strategy.pine` | The video's strategy (not recommended, see below): buy on a close above the 50 SMA, sell on a close below. Optional MACD 3/10/16, higher-timeframe filter, and stop-loss with risk-% sizing |
 | `pine/ema_rsi_atr_strategy.pine` | Another example strategy (EMA cross + RSI filter + ATR stop/target, long only) |
-| `bot/backtest.py` | Backtests the SMA rules on a TradingView CSV: with and without commission, against buy-and-hold |
+| `bot/backtest.py` | Backtests the RSI(2) or SMA rules on a TradingView CSV: with and without commission, against buy-and-hold |
 | `bot/app.py` | Webhook server (`POST /webhook`, `GET /health`, `GET /status`) |
 | `bot/risk.py` | Risk limits: risk-% sizing from the stop-loss, max $ per position, daily loss limit, max trades/day, symbol allow-list, duplicate-alert filter, kill switch |
 | `bot/brokers.py` | Built-in paper simulator and Alpaca (paper/live) connector |
@@ -54,7 +56,7 @@ Your webhook URL is `https://<your-host>/webhook`.
 
 ## 3. Set up TradingView
 
-1. Open a chart and the Pine Editor. Paste `pine/ema_rsi_atr_strategy.pine`, then **Add to chart**.
+1. Open a **daily** chart and the Pine Editor. Paste `pine/rsi2_dip_strategy.pine`, then **Add to chart**.
 2. In the strategy settings, set **Webhook secret** to the same value as `WEBHOOK_SECRET`.
 3. Check the **Strategy Tester** results. If the backtest is bad, don't trade it.
 4. Create an alert: **Condition** = this strategy, select *"alert() function calls and order fills"* (or "Order fills only").
@@ -79,11 +81,36 @@ Any alert works if its message is JSON like this:
 
 Emergency stop: set `TRADING_ENABLED=false` and restart, or close positions in the Alpaca dashboard.
 
+## Which strategy to use: test results
+
+`python research/compare_strategies.py` runs each strategy on 7 real markets: the S&P 500, Apple, Microsoft,
+IBM and Starbucks (2007–2016, including the 2008 crash), Google (2004–2013) and oil (1986–2019).
+It goes all-in on each trade and pays 0.1% commission per buy and per sell.
+
+| Strategy | Losing trades | Markets where it lost money | Beat buy-and-hold |
+|---|---|---|---|
+| Video: SMA 50 cross | 76% | 2 of 7 (S&P 500 −16%, IBM −24%) | 1 of 7 |
+| SMA 50 cross, only above SMA 200 | 76% | 3 of 7 | 0 of 7 |
+| SMA 50 cross with 2% buffer | 66% | 3 of 7 | 0 of 7 |
+| SMA 50 cross + 5% take-profit | 69% | **6 of 7** | 0 of 7 |
+| **RSI(2) dip-buy above SMA 200** | **37%** | **0 of 7** | 0 of 7 |
+| RSI(2) dip-buy + 10% stop | 37% | 2 of 7 | 0 of 7 |
+
+What this means:
+- **The RSI(2) dip-buy has the fewest losing trades and made money on every market tested**, with much smaller
+  drops than holding (S&P 500: worst drop 16% vs 56%). It's the default for the bot's backtester and the recommended script.
+- **But no strategy beat simply buying and holding.** The RSI(2) strategy is out of the market about 90% of the time, so it
+  misses most of the gains. It earned +9% on the S&P 500 where holding earned +29%.
+- **A higher win rate doesn't mean more money.** The take-profit version wins more often but lost money on 6 of 7 markets,
+  because it cuts the winners short.
+- A fixed 10% stop made the RSI(2) strategy *worse* in testing, so it's off by default.
+- These are past results on 7 markets. Losing trades still happen (about 1 in 3), and the future can be different.
+
 ## Features from the "AI Trading" course video
 
 | In the video | Where it is here |
 |---|---|
-| SMA 50 strategy: buy on a close above, sell on a close below, long or flat | `pine/sma_cross_strategy.pine` (defaults match the video) |
+| SMA 50 strategy: buy on a close above, sell on a close below, long or flat | `pine/sma_cross_strategy.pine` (defaults match the video). **Not recommended:** it lost money on the S&P 500 and IBM in testing |
 | MACD with Linda Raschke's 3/10/16 settings, for confluence | Strategy input "Require MACD confluence" |
 | Multi-timeframe: higher timeframe for direction, lower for entries | Strategy input "Only buy when higher timeframe is in an uptrend" |
 | Backtest on $10k with and without commission, compared with buy-and-hold | TradingView Strategy Tester, or `python -m bot.backtest your_export.csv` |
@@ -104,7 +131,8 @@ Things the video points out that apply here too:
 
 ### Backtest example
 ```bash
-python -m bot.backtest BITSTAMP_BTCUSD_1D.csv --sma 50 --commission 0.1 --cash 10000
+python -m bot.backtest SPY_1D.csv                                   # RSI(2) dip-buy (default)
+python -m bot.backtest BITSTAMP_BTCUSD_1D.csv --strategy sma --sma 50   # the video's strategy
 ```
 
 ## Known limitations (be aware)
