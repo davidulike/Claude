@@ -1,0 +1,32 @@
+# One-click hosting on Render (render.com): New + > Blueprint > pick this repo and branch.
+services:
+  - type: web
+    name: tradingview-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m bot.app
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: BROKER
+        value: paper
+      - key: TRADING_ENABLED
+        value: "true"
+      - key: ALLOWED_SYMBOLS
+        value: SPY,QQQ,AAPL
+      - key: MAX_POSITION_USD
+        value: "1000"
+      - key: MAX_DAILY_LOSS_USD
+        value: "100"
+      - key: MAX_TRADES_PER_DAY
+        value: "10"
+      - key: ALPACA_PAPER
+        value: "true"
+      - key: ALPACA_API_KEY
+        sync: false
+      - key: ALPACA_API_SECRET
+        sync: false
