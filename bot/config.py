@@ -38,6 +38,7 @@ class Settings:
     max_position_usd: float = 1000.0
     max_daily_loss_usd: float = 100.0
     max_trades_per_day: int = 10
+    risk_per_trade_pct: float = 2.0
     paper_starting_cash: float = 10_000.0
     journal_path: str = "journal/trades.jsonl"
 
@@ -54,6 +55,8 @@ class Settings:
             raise ConfigError("MAX_POSITION_USD must be > 0")
         if self.max_daily_loss_usd <= 0:
             raise ConfigError("MAX_DAILY_LOSS_USD must be > 0")
+        if not 0 < self.risk_per_trade_pct <= 10:
+            raise ConfigError("RISK_PER_TRADE_PCT must be > 0 and <= 10")
         if self.max_trades_per_day <= 0:
             raise ConfigError("MAX_TRADES_PER_DAY must be > 0")
         return self
@@ -77,6 +80,7 @@ class Settings:
                 max_position_usd=float(env("MAX_POSITION_USD", "1000")),
                 max_daily_loss_usd=float(env("MAX_DAILY_LOSS_USD", "100")),
                 max_trades_per_day=int(env("MAX_TRADES_PER_DAY", "10")),
+                risk_per_trade_pct=float(env("RISK_PER_TRADE_PCT", "2")),
                 paper_starting_cash=float(env("PAPER_STARTING_CASH", "10000")),
                 journal_path=env("JOURNAL_PATH", "journal/trades.jsonl"),
             ).validate()

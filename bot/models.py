@@ -19,6 +19,7 @@ class Signal(BaseModel):
     price: float = Field(gt=0, description="Reference price from TradingView ({{close}})")
     qty: float | None = Field(default=None, gt=0, description="Optional; otherwise sized by risk limits")
     signal_id: str | None = Field(default=None, max_length=128, description="Used to drop duplicate alerts")
+    stop: float | None = Field(default=None, gt=0, description="Stop-loss price; enables risk-based sizing")
 
     @field_validator("symbol")
     @classmethod

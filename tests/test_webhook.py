@@ -153,3 +153,27 @@ def test_config_validation(monkeypatch):
     monkeypatch.setenv("MAX_POSITION_USD", "lots")
     with pytest.raises(ConfigError):
         Settings.from_env(dotenv=None)
+
+
+def test_stop_based_risk_sizing(settings, broker):
+    from dataclasses import replace
+
+    from fastapi.testclient import TestClient
+
+    from bot.app import create_app
+
+    c = TestClient(create_app(replace(settings, max_position_usd=10_000), broker))
+    # Video example: $10k account, risk 2% = $200, entry 100, stop 90 -> 20 shares
+    r = c.post("/webhook", json=sig(price=100, stop=90))
+    assert r.json()["status"] == "submitted"
+    assert broker.positions["SPY"] == 20
+
+
+def test_stop_sizing_still_capped_by_max_position(client, broker):
+    client.post("/webhook", json=sig(price=100, stop=99))  # risk sizing says 200, cap says 10
+    assert broker.positions["SPY"] == 10
+
+
+def test_stop_above_price_rejected(client, broker):
+    r = client.post("/webhook", json=sig(price=100, stop=105))
+    assert r.json()["status"] == "rejected" and not broker.positions

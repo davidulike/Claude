@@ -56,12 +56,21 @@ class RiskManager:
                 )
 
     def size_buy(self, signal: Signal, current_qty: float, account: Account) -> float:
-        """Shares to buy so the position stays within MAX_POSITION_USD and buying power."""
+        """Shares to buy, the smallest of:
+        - the requested qty (if any),
+        - risk sizing: lose at most RISK_PER_TRADE_PCT of equity if the stop is hit (if a stop is given),
+        - MAX_POSITION_USD for the whole position, and available buying power.
+        """
         decimals = 6 if is_crypto(signal.symbol) else 0
         current_value = current_qty * signal.price
         room = min(self.s.max_position_usd - current_value, account.buying_power)
         max_qty = floor_qty(max(room, 0.0) / signal.price, decimals)
         qty = min(signal.qty, max_qty) if signal.qty else max_qty
+        if signal.stop is not None:
+            risk_per_unit = signal.price - signal.stop
+            if risk_per_unit <= 0:
+                raise RiskRejected(f"stop {signal.stop} must be below entry price {signal.price} for a long")
+            qty = min(qty, account.equity * self.s.risk_per_trade_pct / 100 / risk_per_unit)
         qty = floor_qty(qty, decimals)
         if qty <= 0:
             raise RiskRejected(

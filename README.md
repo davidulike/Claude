@@ -11,9 +11,11 @@ TradingView alert ──(webhook JSON)──▶ this bot ──▶ risk checks �
 
 | Path | What it does |
 |---|---|
-| `pine/ema_rsi_atr_strategy.pine` | Example TradingView strategy (EMA cross + RSI filter + ATR stop/target, long only) that sends webhook alerts |
+| `pine/sma_cross_strategy.pine` | **The video's strategy:** buy on a close above the 50 SMA, sell on a close below. Optional MACD 3/10/16, higher-timeframe filter, and stop-loss with risk-% sizing |
+| `pine/ema_rsi_atr_strategy.pine` | Another example strategy (EMA cross + RSI filter + ATR stop/target, long only) |
+| `bot/backtest.py` | Backtests the SMA rules on a TradingView CSV: with and without commission, against buy-and-hold |
 | `bot/app.py` | Webhook server (`POST /webhook`, `GET /health`, `GET /status`) |
-| `bot/risk.py` | Risk limits: max $ per position, daily loss limit, max trades/day, symbol allow-list, duplicate-alert filter, kill switch |
+| `bot/risk.py` | Risk limits: risk-% sizing from the stop-loss, max $ per position, daily loss limit, max trades/day, symbol allow-list, duplicate-alert filter, kill switch |
 | `bot/brokers.py` | Built-in paper simulator and Alpaca (paper/live) connector |
 | `journal/trades.jsonl` | Every signal and its result is appended here |
 
@@ -76,6 +78,34 @@ Any alert works if its message is JSON like this:
 4. To go live, use live keys with `ALPACA_PAPER=false`. The log will print `LIVE TRADING WITH REAL MONEY IS ENABLED`.
 
 Emergency stop: set `TRADING_ENABLED=false` and restart, or close positions in the Alpaca dashboard.
+
+## Features from the "AI Trading" course video
+
+| In the video | Where it is here |
+|---|---|
+| SMA 50 strategy: buy on a close above, sell on a close below, long or flat | `pine/sma_cross_strategy.pine` (defaults match the video) |
+| MACD with Linda Raschke's 3/10/16 settings, for confluence | Strategy input "Require MACD confluence" |
+| Multi-timeframe: higher timeframe for direction, lower for entries | Strategy input "Only buy when higher timeframe is in an uptrend" |
+| Backtest on $10k with and without commission, compared with buy-and-hold | TradingView Strategy Tester, or `python -m bot.backtest your_export.csv` |
+| Position sizing: risk 2% of the account with a stop-loss | `RISK_PER_TRADE_PCT=2`. Alerts that include `"stop"` are sized automatically (strategy input "Use stop-loss + risk-% sizing") |
+| Paper trade before real money | `BROKER=paper` (default) or Alpaca with `ALPACA_PAPER=true` |
+
+Not included: **connecting Claude to the TradingView desktop app** (the "TradingView MCP"). It is a separate,
+unofficial open-source tool that runs on your own computer and lets Claude read and draw on your chart.
+It's for analysis: support/resistance, market structure, adding indicators. This bot doesn't need it.
+To set it up, follow the guide linked in the video and read that project's GitHub page first.
+
+Things the video points out that apply here too:
+- The SMA strategy loses on most trades (about 70% in the video's test). It makes money from a few big winners.
+  Expect long losing streaks.
+- The video's result (about 1.8x buy-and-hold) is on Bitcoin since 2015, which went up a lot. Test other markets and
+  periods before trusting it.
+- You stay responsible. Check what the bot did every day.
+
+### Backtest example
+```bash
+python -m bot.backtest BITSTAMP_BTCUSD_1D.csv --sma 50 --commission 0.1 --cash 10000
+```
 
 ## Known limitations (be aware)
 - The built-in `paper` broker keeps its state in memory, so it resets when the server restarts.

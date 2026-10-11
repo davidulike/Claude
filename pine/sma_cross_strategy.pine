@@ -1,0 +1,77 @@
+//@version=6
+// SMA 50 cross strategy, as described in the MindMathMoney "AI trading" course:
+//   - Buy when a candle CLOSES above the 50 SMA, sell when a candle CLOSES below it.
+//   - Long or flat only (never short).
+// Optional extras from the same course, all OFF by default so the base rules match the video:
+//   - MACD confluence using Linda Raschke's 3/10/16 settings
+//   - Higher-timeframe trend filter (multi-timeframe analysis)
+//   - Stop-loss under the recent swing low + risk-% position sizing
+// Use the Strategy Tester with and without commission, and compare against "Buy & hold".
+// Past results do not predict future results.
+strategy("Webhook Bot - SMA Cross", overlay = true,
+     initial_capital = 10000, default_qty_type = strategy.percent_of_equity, default_qty_value = 100,
+     commission_type = strategy.commission.percent, commission_value = 0.1, slippage = 2,
+     process_orders_on_close = true)
+
+// ---- Inputs ----
+secret   = input.string("PASTE_YOUR_WEBHOOK_SECRET", "Webhook secret (must match WEBHOOK_SECRET)")
+smaLen   = input.int(50, "SMA length", minval = 2)
+
+useMacd  = input.bool(false, "Require MACD confluence (MACD line above signal)", group = "MACD (Linda Raschke 3/10/16)")
+macdFast = input.int(3, "Fast", minval = 1, group = "MACD (Linda Raschke 3/10/16)")
+macdSlow = input.int(10, "Slow", minval = 2, group = "MACD (Linda Raschke 3/10/16)")
+macdSig  = input.int(16, "Signal", minval = 1, group = "MACD (Linda Raschke 3/10/16)")
+
+useHtf   = input.bool(false, "Only buy when higher timeframe is in an uptrend", group = "Multi-timeframe")
+htf      = input.timeframe("W", "Higher timeframe", group = "Multi-timeframe")
+htfLen   = input.int(20, "Higher timeframe SMA length", minval = 2, group = "Multi-timeframe")
+
+useStop  = input.bool(false, "Use stop-loss + risk-% sizing", group = "Risk management")
+swingLen = input.int(10, "Stop below lowest low of last N bars", minval = 1, group = "Risk management")
+riskPct  = input.float(2.0, "Risk per trade (% of equity)", minval = 0.1, maxval = 10, step = 0.1, group = "Risk management")
+
+// ---- Indicators ----
+sma = ta.sma(close, smaLen)
+plot(sma, "SMA", color.purple, 3)
+
+[macdLine, signalLine, _] = ta.macd(close, macdFast, macdSlow, macdSig)
+macdOk = not useMacd or macdLine > signalLine
+
+// Last COMPLETED higher-timeframe bar only, so the backtest can't peek into the future.
+htfClose = request.security(syminfo.tickerid, htf, close[1], lookahead = barmerge.lookahead_on)
+htfSma   = request.security(syminfo.tickerid, htf, ta.sma(close, htfLen)[1], lookahead = barmerge.lookahead_on)
+htfOk = not useHtf or htfClose > htfSma
+
+stopLevel = ta.lowest(low, swingLen)
+
+// ---- Rules (confirmed on candle close) ----
+crossUp   = close > sma and close[1] <= sma[1]
+crossDown = close < sma and close[1] >= sma[1]
+longEntry = crossUp and macdOk and htfOk and barstate.isconfirmed
+longExit  = crossDown and barstate.isconfirmed
+
+msg(action, stopPx) =>
+    stopPart = na(stopPx) ? "" : ',"stop":' + str.tostring(stopPx)
+    '{"secret":"' + secret + '","symbol":"' + syminfo.ticker + '","action":"' + action +
+     '","price":' + str.tostring(close) + stopPart + ',"signal_id":"' + syminfo.ticker + '-' + action + '-' +
+     str.tostring(time) + '"}'
+
+var float stopPx = na
+
+if longEntry and strategy.position_size == 0
+    if useStop and close > stopLevel
+        stopPx := stopLevel
+        riskQty = strategy.equity * riskPct / 100 / (close - stopPx)
+        qty = math.min(riskQty, strategy.equity / close)  // no leverage
+        strategy.entry("Long", strategy.long, qty = qty, alert_message = msg("buy", stopPx))
+    else if not useStop
+        stopPx := na
+        strategy.entry("Long", strategy.long, alert_message = msg("buy", na))
+
+if useStop and strategy.position_size > 0 and not na(stopPx)
+    strategy.exit("Stop", "Long", stop = stopPx, alert_message = msg("close", na))
+
+if longExit and strategy.position_size > 0
+    strategy.close("Long", comment = "Close below SMA", alert_message = msg("close", na))
+
+plot(strategy.position_size > 0 ? stopPx : na, "Stop", color.red, style = plot.style_linebr)
